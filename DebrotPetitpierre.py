@@ -11,9 +11,188 @@ class City:
     def __str__(self):
         return self.name
 
+    def distance_to(self, other):
+        from math import sqrt
+        x_dist = abs(self.x - other.x)
+        y_dist = abs(self.y - other.y)
+        return sqrt(pow(x_dist, 2) + pow(y_dist, 2))
+
     def draw(self, screen, color, radius):
         pygame.draw.circle(screen, color, (self.x, self.y), radius)
 
+class Manager:
+    dest_cities = []
+
+    @staticmethod
+    def add_city(city):
+        Manager.dest_cities.append(city)
+
+    @staticmethod
+    def get_city(index):
+        return Manager.dest_cities[index]
+
+    @staticmethod
+    def number_of_cities():
+        return len(Manager.dest_cities)
+
+class Individual:
+    def __init__(self, indiv=None):
+        from copy import deepcopy
+        self._individual = []
+        self._fitness = 0
+        self._distance = 0
+        if indiv is not None:
+            self._individual = deepcopy(indiv)
+        else:
+            for i in range(0, Manager.number_of_cities()):
+                self._individual.append(None)
+
+    def set_city(self, pos, city):
+        self._individual[pos] = city
+        self._fitness = 0
+        self._distance = 0
+
+    def get_city(self, pos):
+        return self._individual[pos]
+
+    def generate_individual(self):
+        from random import shuffle
+        for city_index in range(0, Manager.number_of_cities()):
+            self.set_city(city_index, Manager.get_city(city_index))
+        shuffle(self._individual)
+
+    def get_distance(self):
+        if self._distance is 0:
+            tour_dist = 0
+            for city_index in range(0, len(self._individual)):
+                from_city = self.get_city(city_index)
+                if city_index+1 < len(self._individual):
+                    dest_city = self.get_city(city_index+1)
+                else:
+                    dest_city = self.get_city(0)
+                tour_dist += from_city.distance_to(dest_city)
+            self._distance = tour_dist
+        return self._distance
+
+    def get_fitness(self):
+        if self._fitness is 0:
+            self._fitness = 1/self.get_distance()
+        return self._fitness
+
+    def contains_city(self, city):
+        return city in self._individual
+
+    def individual_size(self):
+        return len(self._individual)
+
+    def __str__(self):
+        return_str = "|"
+        for i in range(self.individual_size()):
+            return_str += str(self.get_city(i))+"|"
+        return return_str
+
+
+class Population:
+    def __init__(self, size, init):
+        self._individuals = [None]*size
+
+        if init:
+            for i in range(0, self.pop_size()):
+                new_individual = Individual()
+                new_individual.generate_individual()
+                self.save_individual(i, new_individual)
+
+
+    def save_individual(self, index, individual):
+        self._individuals[index] = individual
+
+    def get_individual(self, index):
+        return self._individuals[index]
+
+    def get_fittest(self):
+        fittest = self._individuals[0]
+        for i in range(0, self.pop_size()):
+            if fittest.get_fitness() <= self.get_individual(i).get_fitness():
+                fittest = self.get_individual(i)
+        return fittest
+
+    def pop_size(self):
+        return len(self._individuals)
+
+
+class GeneticalAlgorithm:
+    mutation_rate = 0.015
+    tournament_size = 5
+    elitism = False
+
+    @staticmethod
+    def tournament_selection(pop):
+        from random import randrange
+        tournament = Population(GeneticalAlgorithm.tournament_size, False)
+        for i in range(0, GeneticalAlgorithm.tournament_size):
+            rand_id = randrange(pop.pop_size())
+            tournament.save_individual(i, pop.get_individual(rand_id))
+
+        fittest = tournament.get_fittest()
+        return fittest
+
+    @staticmethod
+    def crossover(parent_1, parent_2):
+        from random import randrange
+        child = Individual()
+
+        start_pos = randrange(parent_1.individual_size())
+        end_pos = randrange(parent_1.individual_size())
+
+        for i in range(child.individual_size()):
+            if start_pos < end_pos and i > start_pos and i < end_pos:
+                child.set_city(i, parent_1.get_city(i))
+            elif start_pos > end_pos:
+                if not (i < start_pos and i > end_pos):
+                    child.set_city(i, parent_1.get_city(i))
+
+        for i in range(parent_2.individual_size()):
+            if not child.contains_city(parent_2.get_city(i)):
+                for ii in range(child.individual_size()):
+                    if child.get_city(ii) is None:
+                        child.set_city(ii, parent_2.get_city(i))
+                        break
+
+        return child
+
+    @staticmethod
+    def mutate(individual):
+        from random import random, randrange
+        for tour_pos_1 in range(individual.individual_size()):
+            if random() < GeneticalAlgorithm.mutation_rate:
+                tour_pos_2 = randrange(individual.individual_size())
+
+                city_1 = individual.get_city(tour_pos_1)
+                city_2 = individual.get_city(tour_pos_2)
+
+                individual.set_city(tour_pos_2, city_1)
+                individual.set_city(tour_pos_1, city_2)
+
+    @staticmethod
+    def evolve_population(pop):
+        new_population = Population(pop.pop_size(), False)
+
+        elitism_offset = 0
+        if GeneticalAlgorithm.elitism:
+            new_population.save_individual(0, pop.get_fittest())
+            elitism_offset = 1
+
+        for i in range(elitism_offset, new_population.pop_size()):
+            parent_1 = GeneticalAlgorithm.tournament_selection(pop)
+            parent_2 = GeneticalAlgorithm.tournament_selection(pop)
+            child = GeneticalAlgorithm.crossover(parent_1, parent_2)
+
+            new_population.save_individual(i, child)
+
+        for i in range(elitism_offset, new_population.pop_size()):
+            GeneticalAlgorithm.mutate(new_population.get_individual(i))
+
+        return new_population
 
 # Global vars
 nogui_param = False
@@ -39,10 +218,10 @@ def fill_cities(file_name):
 
 
 # ga_solve method
-def ga_solve(file=None, gui=True, maxtime=0):
+def ga_solve(_file=None, gui=True, maxtime=0):
     import sys
-    if file is not None:
-        fill_cities(file)
+    if _file is not None:
+        fill_cities(_file)
 
     def draw(screen, color, radius, font):
         global font_color
@@ -75,7 +254,35 @@ def ga_solve(file=None, gui=True, maxtime=0):
                     cities.append(City("v"+str(len(cities)+1), pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1]))
                     draw(screen, point_color, point_radius, font)
 
-        screen.fill(0)
+        for city in cities:
+            Manager.add_city(city)
+
+        pop = Population(len(cities), True)
+        print("Initial distance", pop.get_fittest().get_distance())
+        pop = GeneticalAlgorithm.evolve_population(pop)
+        for i in range(1000):
+            #screen.fill(0)
+            draw(screen, point_color, point_radius, font)
+            pop = GeneticalAlgorithm.evolve_population(pop)
+            first_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
+            previous_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
+            last_city_pos = []
+            for ii in range(1, pop.get_fittest().individual_size()):
+                actual_city = pop.get_fittest().get_city(ii)
+                pygame.draw.line(screen, [0, 255, 255], (previous_city_pos[0], previous_city_pos[1]), (actual_city.x, actual_city.y))
+                previous_city_pos[0] = actual_city.x
+                previous_city_pos[1] = actual_city.y
+                last_city_pos = [actual_city.x, actual_city.y]
+            pygame.draw.line(screen, [0, 255, 255], (first_city_pos[0], first_city_pos[1]), (last_city_pos[0], last_city_pos[1]))
+            pygame.display.update()
+
+        print("Finished")
+        print("Final distance", pop.get_fittest().get_distance())
+        print("Solution")
+        print(str(pop.get_fittest()))
+
+        while True:
+            pass
 
 
 
@@ -128,4 +335,4 @@ if __name__ == "__main__":
             else:
                 skip_val = False
 
-    ga_solve(file=file_param, gui=(not nogui_param), maxtime=maxtime_param)
+    ga_solve(_file=file_param, gui=(not nogui_param), maxtime=maxtime_param)
