@@ -15,7 +15,7 @@ class City:
         from math import sqrt
         x_dist = abs(self.x - other.x)
         y_dist = abs(self.y - other.y)
-        return sqrt(pow(x_dist, 2) + pow(y_dist, 2))
+        return sqrt(x_dist ** 2 + y_dist ** 2)
 
     def draw(self, screen, color, radius):
         pygame.draw.circle(screen, color, (self.x, self.y), radius)
@@ -32,6 +32,18 @@ class Manager:
         return Manager.dest_cities[index]
 
     @staticmethod
+    def get_nearest_city(city, added_cities):
+        nearest = None
+        dist = 10000
+        for cx in Manager.dest_cities:
+            if cx != city:
+                if city.distance_to(cx) < dist:
+                    if cx not in added_cities:
+                        nearest = cx
+                        dist = city.distance_to(cx)
+        return nearest
+
+    @staticmethod
     def number_of_cities():
         return len(Manager.dest_cities)
 
@@ -41,7 +53,7 @@ class Individual:
         self._individual = []
         self._fitness = 0
         self._distance = 0
-        if indiv is not None:
+        if indiv != None:
             self._individual = deepcopy(indiv)
         else:
             for i in range(0, Manager.number_of_cities()):
@@ -56,10 +68,11 @@ class Individual:
         return self._individual[pos]
 
     def generate_individual(self):
-        from random import shuffle
-        for city_index in range(0, Manager.number_of_cities()):
-            self.set_city(city_index, Manager.get_city(city_index))
-        shuffle(self._individual)
+        from random import randrange
+        self.set_city(0, Manager.get_city(0))
+        for city_index in range(1, Manager.number_of_cities()):
+            self.set_city(city_index, Manager.get_nearest_city(self.get_city(city_index-1), self._individual))
+
 
     def get_distance(self):
         if self._distance is 0:
@@ -97,7 +110,7 @@ class Population:
         self._individuals = [None]*size
 
         if init:
-            for i in range(0, self.pop_size()):
+            for i in range(self.pop_size()):
                 new_individual = Individual()
                 new_individual.generate_individual()
                 self.save_individual(i, new_individual)
@@ -108,6 +121,9 @@ class Population:
 
     def get_individual(self, index):
         return self._individuals[index]
+
+    def has_individual(self, individual):
+        return individual in self._individuals
 
     def get_fittest(self):
         fittest = self._individuals[0]
@@ -121,15 +137,17 @@ class Population:
 
 
 class GeneticalAlgorithm:
-    mutation_rate = 0.015
-    tournament_size = 5
-    elitism = False
+    mutation_rate = 0.003
+    tournament_size = 7
+    elitism = True
 
     @staticmethod
     def tournament_selection(pop):
+        global cities
         from random import randrange
+
         tournament = Population(GeneticalAlgorithm.tournament_size, False)
-        for i in range(0, GeneticalAlgorithm.tournament_size):
+        for i in range(GeneticalAlgorithm.tournament_size):
             rand_id = randrange(pop.pop_size())
             tournament.save_individual(i, pop.get_individual(rand_id))
 
@@ -140,7 +158,6 @@ class GeneticalAlgorithm:
     def crossover(parent_1, parent_2):
         from random import randrange
         child = Individual()
-
         start_pos = randrange(parent_1.individual_size())
         end_pos = randrange(parent_1.individual_size())
 
@@ -164,7 +181,7 @@ class GeneticalAlgorithm:
     def mutate(individual):
         from random import random, randrange
         for tour_pos_1 in range(individual.individual_size()):
-            if random() < GeneticalAlgorithm.mutation_rate:
+            if random() <= GeneticalAlgorithm.mutation_rate:
                 tour_pos_2 = randrange(individual.individual_size())
 
                 city_1 = individual.get_city(tour_pos_1)
@@ -172,6 +189,7 @@ class GeneticalAlgorithm:
 
                 individual.set_city(tour_pos_2, city_1)
                 individual.set_city(tour_pos_1, city_2)
+                GeneticalAlgorithm.mutation_rate = 0.003
 
     @staticmethod
     def evolve_population(pop):
@@ -186,7 +204,6 @@ class GeneticalAlgorithm:
             parent_1 = GeneticalAlgorithm.tournament_selection(pop)
             parent_2 = GeneticalAlgorithm.tournament_selection(pop)
             child = GeneticalAlgorithm.crossover(parent_1, parent_2)
-
             new_population.save_individual(i, child)
 
         for i in range(elitism_offset, new_population.pop_size()):
@@ -197,7 +214,7 @@ class GeneticalAlgorithm:
 # Global vars
 nogui_param = False
 file_param = None
-maxtime_param = 0
+maxtime_param = 20
 screen_x = 500
 screen_y = 500
 
@@ -220,12 +237,12 @@ def fill_cities(file_name):
 # ga_solve method
 def ga_solve(_file=None, gui=True, maxtime=0):
     import sys
-    if _file is not None:
+    import time
+    if _file != None:
         fill_cities(_file)
 
     def draw(screen, color, radius, font):
         global font_color
-        screen.fill(0)
         for city in cities:
             city.draw(screen, color, radius)
         text = font.render("Nombre %i" % len(cities), True, font_color)
@@ -252,6 +269,7 @@ def ga_solve(_file=None, gui=True, maxtime=0):
                     collecting = False
                 elif event.type == MOUSEBUTTONDOWN:
                     cities.append(City("v"+str(len(cities)+1), pygame.mouse.get_pos()[0], pygame.mouse.get_pos()[1]))
+                    screen.fill(0)
                     draw(screen, point_color, point_radius, font)
 
         for city in cities:
@@ -260,21 +278,32 @@ def ga_solve(_file=None, gui=True, maxtime=0):
         pop = Population(len(cities), True)
         print("Initial distance", pop.get_fittest().get_distance())
         pop = GeneticalAlgorithm.evolve_population(pop)
-        for i in range(1000):
-            #screen.fill(0)
-            draw(screen, point_color, point_radius, font)
+        start_time = time.time()
+        last_fittest = None
+        while True:
+            act_time = time.time()
+            elapsed_time = act_time - start_time
+            if elapsed_time > maxtime:
+                print("Time elapsed.")
+                break
             pop = GeneticalAlgorithm.evolve_population(pop)
-            first_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
-            previous_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
-            last_city_pos = []
-            for ii in range(1, pop.get_fittest().individual_size()):
-                actual_city = pop.get_fittest().get_city(ii)
-                pygame.draw.line(screen, [0, 255, 255], (previous_city_pos[0], previous_city_pos[1]), (actual_city.x, actual_city.y))
-                previous_city_pos[0] = actual_city.x
-                previous_city_pos[1] = actual_city.y
-                last_city_pos = [actual_city.x, actual_city.y]
-            pygame.draw.line(screen, [0, 255, 255], (first_city_pos[0], first_city_pos[1]), (last_city_pos[0], last_city_pos[1]))
-            pygame.display.update()
+            if last_fittest != str(pop.get_fittest()):
+                first_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
+                previous_city_pos = [pop.get_fittest().get_city(0).x, pop.get_fittest().get_city(0).y]
+                last_city_pos = []
+                screen.fill(0)
+                for ii in range(1, pop.get_fittest().individual_size()):
+                    draw(screen, point_color, point_radius, font)
+                    actual_city = pop.get_fittest().get_city(ii)
+                    pygame.draw.line(screen, [0, 255, 255], (previous_city_pos[0], previous_city_pos[1]), (actual_city.x, actual_city.y))
+                    previous_city_pos[0] = actual_city.x
+                    previous_city_pos[1] = actual_city.y
+                    last_city_pos = [actual_city.x, actual_city.y]
+                pygame.draw.line(screen, [0, 255, 255], (first_city_pos[0], first_city_pos[1]), (last_city_pos[0], last_city_pos[1]))
+                pygame.display.update()
+                last_fittest = str(pop.get_fittest())
+            else:
+                GeneticalAlgorithm.mutation_rate = 1
 
         print("Finished")
         print("Final distance", pop.get_fittest().get_distance())
@@ -314,7 +343,7 @@ if __name__ == "__main__":
 
 
     for arg in argv:
-        if argv.index(arg) is not 0:
+        if argv.index(arg) != 0:
             if not skip_val:
                 if(arg[0] == '-'):
                     # Is a flag
@@ -327,7 +356,7 @@ if __name__ == "__main__":
                         print("Argument error")
                         show_help()
                 else:
-                    if file_param is not None:
+                    if file_param != None:
                         print("Wrong argument.")
                         show_help()
                     else:
