@@ -317,7 +317,7 @@ def ga_solve(_file=None, gui=True, maxtime=0):
                 GeneticalAlgorithm.mutation_rate = 1
                 stagnating += 1
                 if stagnating > 300:
-                    # Best path didn't evolve since 1000 generations
+                    # Best path didn't evolve since 300 generations
                     continue_algo = False
 
 
