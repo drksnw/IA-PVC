@@ -104,6 +104,12 @@ class Individual:
             return_str += str(self.get_city(i))+"|"
         return return_str
 
+    def get_path_as_list(self):
+        return_lst = []
+        for i in range(self.individual_size()):
+            return_lst.append(str(self.get_city(i)))
+        return return_lst
+
 
 class Population:
     def __init__(self, size, init):
@@ -226,6 +232,9 @@ font_color = [255,255,255]
 cities = []
 
 def fill_cities(file_name):
+    global cities
+    Manager.dest_cities = []
+    cities = []
     cities_data = ""
     with open(file_name, 'r') as f:
         cities_data = f.readlines()
@@ -238,6 +247,7 @@ def fill_cities(file_name):
 def ga_solve(_file=None, gui=True, maxtime=0):
     import sys
     import time
+    global cities
     if _file != None:
         fill_cities(_file)
 
@@ -250,7 +260,7 @@ def ga_solve(_file=None, gui=True, maxtime=0):
         screen.blit(text, textRect)
         pygame.display.flip()
     if(gui):
-        global screen_x, screen_y, point_color, point_radius, font_color, cities
+        global screen_x, screen_y, point_color, point_radius, font_color
         from pygame.locals import KEYDOWN, QUIT, MOUSEBUTTONDOWN, K_RETURN, K_ESCAPE
 
         pygame.init()
@@ -276,15 +286,15 @@ def ga_solve(_file=None, gui=True, maxtime=0):
             Manager.add_city(city)
 
         pop = Population(len(cities), True)
-        print("Initial distance", pop.get_fittest().get_distance())
         pop = GeneticalAlgorithm.evolve_population(pop)
         start_time = time.time()
         last_fittest = None
-        while True:
+        continue_algo = True
+        stagnating = 0
+        while continue_algo:
             act_time = time.time()
             elapsed_time = act_time - start_time
             if elapsed_time > maxtime:
-                print("Time elapsed.")
                 break
             pop = GeneticalAlgorithm.evolve_population(pop)
             if last_fittest != str(pop.get_fittest()):
@@ -302,16 +312,46 @@ def ga_solve(_file=None, gui=True, maxtime=0):
                 pygame.draw.line(screen, [0, 255, 255], (first_city_pos[0], first_city_pos[1]), (last_city_pos[0], last_city_pos[1]))
                 pygame.display.update()
                 last_fittest = str(pop.get_fittest())
+                stagnating = 0
             else:
                 GeneticalAlgorithm.mutation_rate = 1
+                stagnating += 1
+                if stagnating > 300:
+                    # Best path didn't evolve since 1000 generations
+                    continue_algo = False
 
-        print("Finished")
-        print("Final distance", pop.get_fittest().get_distance())
-        print("Solution")
-        print(str(pop.get_fittest()))
 
-        while True:
-            pass
+        return pop.get_fittest().get_distance(), pop.get_fittest().get_path_as_list()
+    else:
+        if _file != None:
+            for city in cities:
+                Manager.add_city(city)
+
+            pop = Population(len(cities), True)
+            pop = GeneticalAlgorithm.evolve_population(pop)
+            start_time = time.time()
+            last_fittest = None
+            continue_algo = True
+            stagnating = 0
+            while continue_algo:
+                act_time = time.time()
+                elapsed_time = act_time - start_time
+                if elapsed_time > maxtime:
+                    break
+                pop = GeneticalAlgorithm.evolve_population(pop)
+                if last_fittest != str(pop.get_fittest()):
+                    last_fittest = str(pop.get_fittest())
+                    stagnating = 0
+                else:
+                    GeneticalAlgorithm.mutation_rate = 1
+                    stagnating += 1
+                    if stagnating > 300:
+                        # Best path didn't evolve since 300 generations
+                        continue_algo = False
+
+            return pop.get_fittest().get_distance(), pop.get_fittest().get_path_as_list()
+        else:
+            print("Please specify a file !")
 
 
 
